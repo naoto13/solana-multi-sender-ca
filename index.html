@@ -566,7 +566,8 @@
               </label>
               <label>
                 Batch size
-                <input id="batchSize" type="number" min="1" max="12" value="5" />
+                <input id="batchSize" type="number" min="1" max="20" value="5" aria-describedby="batchSizeHint" />
+                <small id="batchSizeHint">Max 20. SPL may need smaller batches when recipient token accounts must be created.</small>
               </label>
             </div>
 
@@ -680,6 +681,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const networkPill = document.querySelector("#networkPill");
       const tokenAddressLabel = document.querySelector("#tokenAddressLabel");
       const tokenAddressHint = document.querySelector("#tokenAddressHint");
+      const batchSizeHint = document.querySelector("#batchSizeHint");
       let activeTab = "all";
       let connectedPublicKey = "";
       let isExecuting = false;
@@ -969,7 +971,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         }
 
         const payer = new solanaWeb3.PublicKey(connectedPublicKey);
-        const size = Math.max(1, Math.min(12, Number(batchSize.value) || 1));
+        const size = Math.max(1, Math.min(20, Number(batchSize.value) || 1));
         const batches = Array.from({ length: Math.ceil(valid.length / size) }, (_, index) =>
           valid.slice(index * size, index * size + size)
         );
@@ -1023,7 +1025,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         const valid = rows.filter((row) => row.ok);
         const errors = rows.filter((row) => !row.ok);
         const total = valid.reduce((sum, row) => sum + row.amount, 0);
-        const size = Math.max(1, Math.min(12, Number(batchSize.value) || 1));
+        const size = Math.max(1, Math.min(20, Number(batchSize.value) || 1));
         const batches = Math.ceil(valid.length / size);
         const isSplTransfer = assetType.value === "SPL";
         const selectedToken = tokenPresets[tokenPreset.value];
@@ -1084,6 +1086,9 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           : tokenPreset.value === "custom"
             ? "Paste the SPL Token Mint Address for the token you want to send."
             : `${selectedToken.symbol} mint address is filled from the token preset.`;
+        batchSizeHint.textContent = isSolTransfer
+          ? "Max 20 SOL recipients per batch. Larger batches are split automatically."
+          : "Max 20, but SPL batches can exceed Solana transaction size when recipient token accounts must be created. Lower this if Phantom rejects the transaction.";
         executeBtn.disabled = isExecuting || !connectedPublicKey || !rows.length || errors.length > 0;
         renderTxHistory();
       }

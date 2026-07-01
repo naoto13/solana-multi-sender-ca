@@ -12,6 +12,7 @@ Static frontend prototype for a Solana multi sender flow.
 - `address,amount` recipient input
 - Local validation for invalid addresses, invalid amounts, and duplicates
 - Batch count and estimated fee preview
+- Batch size up to 20 recipients per transaction attempt
 - Phantom signing and transaction broadcast
 - Solscan transaction links after each sent batch
 - SOL transfer batching
