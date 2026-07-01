@@ -403,6 +403,61 @@
         color: #fff;
       }
 
+      .tx-history {
+        margin-top: 16px;
+        border: 2px solid var(--ink);
+        background: #fffdf8;
+      }
+
+      .tx-history h3 {
+        margin: 0;
+        padding: 10px 12px;
+        border-bottom: 2px solid var(--ink);
+        background: #e9f2ef;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .tx-list {
+        display: grid;
+        gap: 0;
+      }
+
+      .tx-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+      }
+
+      .tx-item:last-child {
+        border-bottom: 0;
+      }
+
+      .tx-sig {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: "Courier New", monospace;
+      }
+
+      .tx-link {
+        color: var(--blue);
+        font-weight: 800;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .tx-link:hover {
+        text-decoration: underline;
+      }
+
       .rail {
         height: 10px;
         border: 2px solid var(--ink);
@@ -588,6 +643,16 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
             </div>
 
             <div class="batch-list" id="batchList"></div>
+            <div class="tx-history">
+              <h3>Transactions</h3>
+              <div class="tx-list" id="txList">
+                <div class="tx-item">
+                  <span class="pill">none</span>
+                  <span class="tx-sig">No transactions sent yet</span>
+                  <span>-</span>
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
       </section>
@@ -609,6 +674,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const statusBox = document.querySelector("#statusBox");
       const recipientRows = document.querySelector("#recipientRows");
       const batchList = document.querySelector("#batchList");
+      const txList = document.querySelector("#txList");
       const walletBtn = document.querySelector("#walletBtn");
       const executeBtn = document.querySelector("#executeBtn");
       const networkPill = document.querySelector("#networkPill");
@@ -617,6 +683,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       let activeTab = "all";
       let connectedPublicKey = "";
       let isExecuting = false;
+      const txHistory = [];
       const rpcEndpoint = "https://api.mainnet-beta.solana.com";
       const rpcEndpoints = [
         rpcEndpoint,
@@ -713,6 +780,35 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
       function setStatus(message, code, state = "neutral") {
         statusBox.className = `status${state === "ok" ? " ok" : state === "bad" ? " bad" : ""}`;
         statusBox.innerHTML = `<span>${message}</span><span>${code}</span>`;
+      }
+
+      function solscanUrl(signature) {
+        return `https://solscan.io/tx/${signature}`;
+      }
+
+      function shortSignature(signature) {
+        return `${signature.slice(0, 10)}...${signature.slice(-8)}`;
+      }
+
+      function renderTxHistory() {
+        if (!txHistory.length) {
+          txList.innerHTML = `<div class="tx-item">
+            <span class="pill">none</span>
+            <span class="tx-sig">No transactions sent yet</span>
+            <span>-</span>
+          </div>`;
+          return;
+        }
+
+        txList.innerHTML = txHistory
+          .map(
+            (tx) => `<div class="tx-item">
+              <span class="pill ok">batch ${tx.batch}</span>
+              <span class="tx-sig" title="${tx.signature}">${shortSignature(tx.signature)}</span>
+              <a class="tx-link" href="${solscanUrl(tx.signature)}" target="_blank" rel="noopener noreferrer">Solscan</a>
+            </div>`
+          )
+          .join("");
       }
 
       async function withRpcFallback(task) {
@@ -893,7 +989,14 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
             transaction.feePayer = payer;
             transaction.recentBlockhash = latestBlockhash.blockhash;
             const result = await provider.signAndSendTransaction(transaction);
-            setStatus(`Sent batch ${index + 1}: ${result.signature.slice(0, 10)}...`, "SENT", "ok");
+            txHistory.unshift({
+              batch: index + 1,
+              signature: result.signature,
+              asset: currentAssetSymbol(),
+              count: batches[index].length,
+            });
+            renderTxHistory();
+            setStatus(`Sent batch ${index + 1}: ${shortSignature(result.signature)}`, "SENT", "ok");
             await withRpcFallback((rpcConnection) =>
               rpcConnection.confirmTransaction(
                 {
@@ -982,6 +1085,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
             ? "Paste the SPL Token Mint Address for the token you want to send."
             : `${selectedToken.symbol} mint address is filled from the token preset.`;
         executeBtn.disabled = isExecuting || !connectedPublicKey || !rows.length || errors.length > 0;
+        renderTxHistory();
       }
 
       function syncTokenPreset() {

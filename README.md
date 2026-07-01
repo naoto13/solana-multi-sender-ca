@@ -13,6 +13,7 @@ Static frontend prototype for a Solana multi sender flow.
 - Local validation for invalid addresses, invalid amounts, and duplicates
 - Batch count and estimated fee preview
 - Phantom signing and transaction broadcast
+- Solscan transaction links after each sent batch
 - SOL transfer batching
 - SPL token transfer batching with associated token account creation for recipients
 
