@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Solana Multi Sender</title>
+    <style>
+      :root {
+        --ink: #101416;
+        --muted: #657174;
+        --paper: #f7f3e8;
+        --panel: #fffdf6;
+        --line: #d9d0bd;
+        --teal: #087f7a;
+        --teal-dark: #045f5b;
+        --amber: #f3b33d;
+        --red: #c6463d;
+        --green: #25724a;
+        --blue: #255f9f;
+        --shadow: 0 18px 60px rgba(16, 20, 22, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(16, 20, 22, 0.035) 1px, transparent 1px) 0 0 / 40px 40px,
+          linear-gradient(rgba(16, 20, 22, 0.035) 1px, transparent 1px) 0 0 / 40px 40px,
+          var(--paper);
+        font-family: Georgia, "Times New Roman", serif;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      .shell {
+        min-height: 100vh;
+        padding: 24px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        max-width: 1180px;
+        margin: 0 auto 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .mark {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border: 2px solid var(--ink);
+        background: var(--amber);
+        box-shadow: 4px 4px 0 var(--ink);
+        font-weight: 800;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: clamp(24px, 4vw, 44px);
+        line-height: 0.95;
+        letter-spacing: 0;
+      }
+
+      .brand p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 13px;
+      }
+
+      .wallet {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 2px solid var(--ink);
+        background: var(--ink);
+        color: #fffdf6;
+        cursor: pointer;
+        box-shadow: 4px 4px 0 var(--amber);
+        white-space: nowrap;
+      }
+
+      .wallet:hover {
+        transform: translate(-1px, -1px);
+        box-shadow: 5px 5px 0 var(--amber);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+        gap: 18px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+
+      .panel {
+        border: 2px solid var(--ink);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 2px solid var(--ink);
+        background: #e9f2ef;
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: 0;
+      }
+
+      .panel-body {
+        padding: 18px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        border: 2px solid var(--ink);
+        background: #fffdf8;
+        color: var(--ink);
+        outline: none;
+      }
+
+      input,
+      select {
+        height: 44px;
+        padding: 0 12px;
+      }
+
+      textarea {
+        min-height: 280px;
+        resize: vertical;
+        padding: 14px;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      input:focus,
+      textarea:focus,
+      select:focus {
+        border-color: var(--teal);
+        box-shadow: 0 0 0 4px rgba(8, 127, 122, 0.14);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 2px solid var(--ink);
+        background: #fffdf8;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .btn.primary {
+        background: var(--teal);
+        color: #fff;
+      }
+
+      .btn.danger {
+        background: #f7dedb;
+      }
+
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .metric {
+        min-height: 86px;
+        padding: 13px;
+        border: 2px solid var(--ink);
+        background: #fffdf8;
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: clamp(24px, 4vw, 34px);
+        line-height: 1;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 48px;
+        padding: 12px;
+        border: 2px solid var(--ink);
+        background: #f6e8bc;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .status.ok {
+        background: #dff0df;
+      }
+
+      .status.bad {
+        background: #f5d4d1;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border: 2px solid var(--ink);
+        margin: 16px 0 12px;
+      }
+
+      .tab {
+        min-height: 38px;
+        border: 0;
+        border-right: 2px solid var(--ink);
+        background: #fffdf8;
+        cursor: pointer;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .tab:last-child {
+        border-right: 0;
+      }
+
+      .tab.active {
+        background: var(--amber);
+      }
+
+      .table-wrap {
+        overflow: auto;
+        border: 2px solid var(--ink);
+        max-height: 340px;
+        background: #fffdf8;
+      }
+
+      table {
+        width: 100%;
+        min-width: 560px;
+        border-collapse: collapse;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #e9f2ef;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .addr {
+        max-width: 240px;
+        overflow-wrap: anywhere;
+        font-family: "Courier New", monospace;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border: 1px solid currentColor;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .pill.ok {
+        color: var(--green);
+      }
+
+      .pill.bad {
+        color: var(--red);
+      }
+
+      .batch-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .batch {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border: 2px solid var(--ink);
+        background: #fffdf8;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+      }
+
+      .batch b {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        background: var(--ink);
+        color: #fff;
+      }
+
+      .rail {
+        height: 10px;
+        border: 2px solid var(--ink);
+        background:
+          linear-gradient(90deg, var(--teal) var(--fill), transparent 0),
+          #f0eadc;
+      }
+
+      .footnote {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 880px) {
+        .shell {
+          padding: 16px;
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .grid,
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .wallet {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .panel-head,
+        .panel-body {
+          padding: 14px;
+        }
+
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .tabs {
+          grid-template-columns: 1fr;
+        }
+
+        .tab {
+          border-right: 0;
+          border-bottom: 2px solid var(--ink);
+        }
+
+        .tab:last-child {
+          border-bottom: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark">S</div>
+          <div>
+            <h1>Solana Multi Sender</h1>
+            <p>Batch SOL / SPL transfer console</p>
+          </div>
+        </div>
+        <button class="wallet" id="walletBtn" type="button">Connect Phantom</button>
+      </header>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Transfer builder</h2>
+            <span class="pill ok" id="networkPill">phantom ready</span>
+          </div>
+          <div class="panel-body">
+            <div class="controls">
+              <label>
+                Asset
+                <select id="assetType">
+                  <option value="SOL">SOL</option>
+                  <option value="SPL">SPL Token</option>
+                </select>
+              </label>
+              <label>
+                Token mint
+                <input id="mintInput" value="So11111111111111111111111111111111111111112" />
+              </label>
+              <label>
+                Batch size
+                <input id="batchSize" type="number" min="1" max="12" value="5" />
+              </label>
+            </div>
+
+            <label>
+              Recipients
+              <textarea id="recipientInput" spellcheck="false">A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,1.25
+9xQeWvG816bUx9EPjHmaT23yvVM2ZW4R7NqQYxYhQ8sL,0.8
+H3W7sT6ZrX4nJkP9zYbLq5v2uE8cD1aF6mNpR7tV3xQ,2
+bad-address,0.4
+A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
+            </label>
+
+            <div class="actions">
+              <button class="btn primary" id="simulateBtn" type="button">Simulate</button>
+              <button class="btn" id="sampleBtn" type="button">Load sample</button>
+              <button class="btn danger" id="clearBtn" type="button">Clear</button>
+            </div>
+            <p class="footnote">This page connects to Phantom for wallet detection only. It does not sign or broadcast transactions.</p>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="panel-head">
+            <h2>Preflight</h2>
+            <span class="pill" id="rowsPill">5 rows</span>
+          </div>
+          <div class="panel-body">
+            <div class="summary">
+              <div class="metric">
+                <span>Recipients</span>
+                <strong id="validCount">0</strong>
+              </div>
+              <div class="metric">
+                <span>Total amount</span>
+                <strong id="totalAmount">0</strong>
+              </div>
+              <div class="metric">
+                <span>Batches</span>
+                <strong id="batchCount">0</strong>
+              </div>
+              <div class="metric">
+                <span>Est. fee</span>
+                <strong id="feeAmount">0</strong>
+              </div>
+            </div>
+            <div class="status" id="statusBox">
+              <span>Waiting for simulation</span>
+              <span>READY</span>
+            </div>
+
+            <div class="tabs" role="tablist">
+              <button class="tab active" type="button" data-tab="all">All</button>
+              <button class="tab" type="button" data-tab="valid">Valid</button>
+              <button class="tab" type="button" data-tab="errors">Errors</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Address</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="recipientRows"></tbody>
+              </table>
+            </div>
+
+            <div class="batch-list" id="batchList"></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const recipientInput = document.querySelector("#recipientInput");
+      const assetType = document.querySelector("#assetType");
+      const mintInput = document.querySelector("#mintInput");
+      const batchSize = document.querySelector("#batchSize");
+      const rowsPill = document.querySelector("#rowsPill");
+      const validCount = document.querySelector("#validCount");
+      const totalAmount = document.querySelector("#totalAmount");
+      const batchCount = document.querySelector("#batchCount");
+      const feeAmount = document.querySelector("#feeAmount");
+      const statusBox = document.querySelector("#statusBox");
+      const recipientRows = document.querySelector("#recipientRows");
+      const batchList = document.querySelector("#batchList");
+      const walletBtn = document.querySelector("#walletBtn");
+      const networkPill = document.querySelector("#networkPill");
+      let activeTab = "all";
+
+      const sample = `4k3Dyjzvzp8e8fprBvH6b9W2n3t9WgGz7VqN1wKbXH2m,12.5
+7YttLkHDoq7mVp4f2nYp3zK9a8Sm6w8zN7eX1qAs4rT,4
+FZthQ5Z7Jk3bQ8nR5xS3mV6wP1aD9cE2gH7iK4mNp,8.75
+5tzQpX3yAf8Jk7Ld4Rr9Ts2Vv6Wx1Yb3Nc5Me7Hg9Qa,2.25
+Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
+
+      function looksLikeSolanaAddress(value) {
+        return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+      }
+
+      function parseRecipients() {
+        const seen = new Set();
+        return recipientInput.value
+          .split(/\n+/)
+          .map((raw, index) => {
+            const line = raw.trim();
+            const [address = "", amountRaw = ""] = line.split(/[,\s]+/);
+            const amount = Number(amountRaw);
+            const issues = [];
+
+            if (!line) issues.push("empty");
+            if (line && !looksLikeSolanaAddress(address)) issues.push("invalid address");
+            if (line && (!Number.isFinite(amount) || amount <= 0)) issues.push("invalid amount");
+            if (line && seen.has(address)) issues.push("duplicate");
+            if (line && address) seen.add(address);
+
+            return {
+              index: index + 1,
+              address,
+              amount,
+              amountRaw,
+              issues,
+              ok: line.length > 0 && issues.length === 0,
+            };
+          })
+          .filter((row) => row.address || row.amountRaw || row.issues[0] !== "empty");
+      }
+
+      function formatAmount(value) {
+        return new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: 6,
+        }).format(value);
+      }
+
+      function render() {
+        const rows = parseRecipients();
+        const valid = rows.filter((row) => row.ok);
+        const errors = rows.filter((row) => !row.ok);
+        const total = valid.reduce((sum, row) => sum + row.amount, 0);
+        const size = Math.max(1, Math.min(12, Number(batchSize.value) || 1));
+        const batches = Math.ceil(valid.length / size);
+        const estimatedFee = batches * 0.000005 + (assetType.value === "SPL" ? valid.length * 0.00204 : 0);
+        const visibleRows = activeTab === "valid" ? valid : activeTab === "errors" ? errors : rows;
+
+        rowsPill.textContent = `${rows.length} rows`;
+        validCount.textContent = valid.length;
+        totalAmount.textContent = `${formatAmount(total)} ${assetType.value}`;
+        batchCount.textContent = batches;
+        feeAmount.textContent = `${estimatedFee.toFixed(6)} SOL`;
+
+        statusBox.className = "status";
+        if (!rows.length) {
+          statusBox.innerHTML = "<span>No recipients loaded</span><span>IDLE</span>";
+        } else if (errors.length) {
+          statusBox.classList.add("bad");
+          statusBox.innerHTML = `<span>${errors.length} row${errors.length === 1 ? "" : "s"} need attention</span><span>BLOCKED</span>`;
+        } else {
+          statusBox.classList.add("ok");
+          statusBox.innerHTML = "<span>Simulation passed locally</span><span>READY</span>";
+        }
+
+        recipientRows.innerHTML = visibleRows
+          .map((row) => {
+            const status = row.ok
+              ? '<span class="pill ok">ok</span>'
+              : `<span class="pill bad">${row.issues.join(", ")}</span>`;
+            return `<tr>
+              <td>${row.index}</td>
+              <td class="addr">${row.address || "-"}</td>
+              <td>${Number.isFinite(row.amount) ? formatAmount(row.amount) : row.amountRaw || "-"}</td>
+              <td>${status}</td>
+            </tr>`;
+          })
+          .join("");
+
+        batchList.innerHTML = Array.from({ length: batches }, (_, index) => {
+          const start = index * size;
+          const count = valid.slice(start, start + size).length;
+          const fill = Math.round((count / size) * 100);
+          return `<div class="batch">
+            <b>${index + 1}</b>
+            <div class="rail" style="--fill:${fill}%"></div>
+            <span>${count} tx</span>
+          </div>`;
+        }).join("");
+
+        mintInput.disabled = assetType.value === "SOL";
+      }
+
+      document.querySelector("#simulateBtn").addEventListener("click", render);
+      document.querySelector("#sampleBtn").addEventListener("click", () => {
+        recipientInput.value = sample;
+        render();
+      });
+      document.querySelector("#clearBtn").addEventListener("click", () => {
+        recipientInput.value = "";
+        render();
+      });
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          activeTab = tab.dataset.tab;
+          document.querySelectorAll(".tab").forEach((node) => node.classList.toggle("active", node === tab));
+          render();
+        });
+      });
+      function shortAddress(address) {
+        return `${address.slice(0, 4)}...${address.slice(-4)}`;
+      }
+
+      function setWalletState(label, state = "neutral") {
+        walletBtn.textContent = label;
+        networkPill.className = state === "bad" ? "pill bad" : state === "ok" ? "pill ok" : "pill";
+      }
+
+      async function connectPhantom() {
+        const provider = window.solana;
+        if (!provider || !provider.isPhantom) {
+          setWalletState("Install Phantom", "bad");
+          window.open("https://phantom.app/", "_blank", "noopener,noreferrer");
+          return;
+        }
+
+        try {
+          walletBtn.disabled = true;
+          walletBtn.textContent = "Connecting...";
+          const response = await provider.connect();
+          const publicKey = response.publicKey.toString();
+          walletBtn.textContent = shortAddress(publicKey);
+          networkPill.textContent = "phantom connected";
+          networkPill.className = "pill ok";
+        } catch (error) {
+          setWalletState("Connect Phantom", "bad");
+          networkPill.textContent = error && error.code === 4001 ? "connection rejected" : "wallet error";
+        } finally {
+          walletBtn.disabled = false;
+        }
+      }
+
+      walletBtn.addEventListener("click", () => {
+        connectPhantom();
+      });
+      [recipientInput, assetType, mintInput, batchSize].forEach((node) => node.addEventListener("input", render));
+      render();
+    </script>
+  </body>
+</html>
