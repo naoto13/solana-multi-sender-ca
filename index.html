@@ -142,7 +142,7 @@
 
       .controls {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
         margin-bottom: 14px;
       }
@@ -173,6 +173,10 @@
         background: #fffdf8;
         color: var(--ink);
         outline: none;
+      }
+
+      input[readonly] {
+        background: #f0eadc;
       }
 
       input,
@@ -483,6 +487,13 @@
                 </select>
               </label>
               <label>
+                Token preset
+                <select id="tokenPreset">
+                  <option value="custom">Custom</option>
+                  <option value="usdc">USDC</option>
+                </select>
+              </label>
+              <label>
                 <span id="tokenAddressLabel">Token address</span>
                 <input
                   id="mintInput"
@@ -574,6 +585,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
     <script>
       const recipientInput = document.querySelector("#recipientInput");
       const assetType = document.querySelector("#assetType");
+      const tokenPreset = document.querySelector("#tokenPreset");
       const mintInput = document.querySelector("#mintInput");
       const batchSize = document.querySelector("#batchSize");
       const rowsPill = document.querySelector("#rowsPill");
@@ -589,6 +601,12 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const tokenAddressLabel = document.querySelector("#tokenAddressLabel");
       const tokenAddressHint = document.querySelector("#tokenAddressHint");
       let activeTab = "all";
+      const tokenPresets = {
+        usdc: {
+          symbol: "USDC",
+          mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        },
+      };
 
       const sample = `4k3Dyjzvzp8e8fprBvH6b9W2n3t9WgGz7VqN1wKbXH2m,12.5
 7YttLkHDoq7mVp4f2nYp3zK9a8Sm6w8zN7eX1qAs4rT,4
@@ -641,12 +659,15 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         const total = valid.reduce((sum, row) => sum + row.amount, 0);
         const size = Math.max(1, Math.min(12, Number(batchSize.value) || 1));
         const batches = Math.ceil(valid.length / size);
-        const estimatedFee = batches * 0.000005 + (assetType.value === "SPL" ? valid.length * 0.00204 : 0);
+        const isSplTransfer = assetType.value === "SPL";
+        const selectedToken = tokenPresets[tokenPreset.value];
+        const displayAsset = isSplTransfer && selectedToken ? selectedToken.symbol : assetType.value;
+        const estimatedFee = batches * 0.000005 + (isSplTransfer ? valid.length * 0.00204 : 0);
         const visibleRows = activeTab === "valid" ? valid : activeTab === "errors" ? errors : rows;
 
         rowsPill.textContent = `${rows.length} rows`;
         validCount.textContent = valid.length;
-        totalAmount.textContent = `${formatAmount(total)} ${assetType.value}`;
+        totalAmount.textContent = `${formatAmount(total)} ${displayAsset}`;
         batchCount.textContent = batches;
         feeAmount.textContent = `${estimatedFee.toFixed(6)} SOL`;
 
@@ -687,12 +708,29 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         }).join("");
 
         const isSolTransfer = assetType.value === "SOL";
+        tokenPreset.disabled = isSolTransfer;
         mintInput.disabled = isSolTransfer;
+        mintInput.readOnly = !isSolTransfer && tokenPreset.value !== "custom";
         mintInput.placeholder = isSolTransfer ? "Not required for SOL" : "SPL token mint address";
         tokenAddressLabel.textContent = isSolTransfer ? "Token address" : "Token address / mint address";
         tokenAddressHint.textContent = isSolTransfer
           ? "SOL transfers do not need a token address."
-          : "Paste the SPL Token Mint Address for the token you want to send.";
+          : tokenPreset.value === "custom"
+            ? "Paste the SPL Token Mint Address for the token you want to send."
+            : `${selectedToken.symbol} mint address is filled from the token preset.`;
+      }
+
+      function syncTokenPreset() {
+        if (assetType.value === "SOL") {
+          return;
+        }
+
+        const selectedToken = tokenPresets[tokenPreset.value];
+        if (selectedToken) {
+          mintInput.value = selectedToken.mint;
+        } else if (mintInput.readOnly) {
+          mintInput.value = "";
+        }
       }
 
       document.querySelector("#simulateBtn").addEventListener("click", render);
@@ -747,7 +785,18 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
       walletBtn.addEventListener("click", () => {
         connectPhantom();
       });
-      [recipientInput, assetType, mintInput, batchSize].forEach((node) => node.addEventListener("input", render));
+      assetType.addEventListener("change", () => {
+        if (assetType.value === "SPL" && !mintInput.value) {
+          tokenPreset.value = "usdc";
+        }
+        syncTokenPreset();
+        render();
+      });
+      tokenPreset.addEventListener("change", () => {
+        syncTokenPreset();
+        render();
+      });
+      [recipientInput, mintInput, batchSize].forEach((node) => node.addEventListener("input", render));
       render();
     </script>
   </body>
