@@ -14,6 +14,7 @@ Static frontend prototype for a Solana multi sender flow.
 - Batch count and estimated fee preview
 - Batch size up to 20 recipients per transaction attempt
 - Max recipients per transaction calculator using serialized transaction size
+- Automatic execution-time repacking under the 1232-byte Solana transaction limit
 - Phantom signing and transaction broadcast
 - Solscan transaction links after each sent batch
 - SOL transfer batching

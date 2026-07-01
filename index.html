@@ -970,6 +970,60 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         }).length;
       }
 
+      async function buildTransferTransaction(payer, rows, options = {}) {
+        return assetType.value === "SOL"
+          ? buildSolTransaction(payer, rows)
+          : buildSplTransaction(payer, rows, options);
+      }
+
+      async function packRowsBySerializedSize(payer, rows, requestedMax) {
+        const batches = [];
+        let current = [];
+        let currentBytes = 0;
+
+        for (const row of rows) {
+          if (current.length >= requestedMax) {
+            batches.push({ rows: current, bytes: currentBytes });
+            current = [];
+            currentBytes = 0;
+          }
+
+          const candidate = [...current, row];
+          const candidateTransaction = await buildTransferTransaction(payer, candidate, {
+            skipSourceAccountCheck: true,
+          });
+          const candidateBytes = serializedTransactionSize(candidateTransaction, payer);
+
+          if (candidateBytes <= transactionSizeLimit) {
+            current = candidate;
+            currentBytes = candidateBytes;
+            continue;
+          }
+
+          if (current.length) {
+            batches.push({ rows: current, bytes: currentBytes });
+            const singleTransaction = await buildTransferTransaction(payer, [row], {
+              skipSourceAccountCheck: true,
+            });
+            const singleBytes = serializedTransactionSize(singleTransaction, payer);
+            if (singleBytes > transactionSizeLimit) {
+              throw new Error(`Single recipient transaction is too large: ${singleBytes} > ${transactionSizeLimit}`);
+            }
+            current = [row];
+            currentBytes = singleBytes;
+            continue;
+          }
+
+          throw new Error(`Single recipient transaction is too large: ${candidateBytes} > ${transactionSizeLimit}`);
+        }
+
+        if (current.length) {
+          batches.push({ rows: current, bytes: currentBytes });
+        }
+
+        return batches;
+      }
+
       async function estimateMaxRecipientsPerTransaction() {
         if (!connectedPublicKey) {
           txCapacity.textContent = "Connect";
@@ -1062,31 +1116,39 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         }
 
         const payer = new solanaWeb3.PublicKey(connectedPublicKey);
-        const size = Math.max(1, Math.min(20, Number(batchSize.value) || 1));
-        const batches = Array.from({ length: Math.ceil(valid.length / size) }, (_, index) =>
-          valid.slice(index * size, index * size + size)
-        );
+        const requestedSize = Math.max(1, Math.min(20, Number(batchSize.value) || 1));
 
         isExecuting = true;
         executeBtn.disabled = true;
         try {
+          setStatus("Packing rows into transactions under 1232 bytes", "PACK", "neutral");
+          const batches = await packRowsBySerializedSize(payer, valid, requestedSize);
+          batchCount.textContent = batches.length;
           for (let index = 0; index < batches.length; index += 1) {
-            setStatus(`Requesting Phantom signature for batch ${index + 1} of ${batches.length}`, "SIGN", "neutral");
-            const transaction =
-              assetType.value === "SOL"
-                ? await buildSolTransaction(payer, batches[index])
-                : await buildSplTransaction(payer, batches[index]);
+            setStatus(
+              `Requesting Phantom signature for batch ${index + 1} of ${batches.length} (${batches[index].rows.length} recipients, ${batches[index].bytes} bytes)`,
+              "SIGN",
+              "neutral"
+            );
+            const transaction = await buildTransferTransaction(payer, batches[index].rows);
             const latestBlockhash = await withRpcFallback((rpcConnection) =>
               rpcConnection.getLatestBlockhash("confirmed")
             );
             transaction.feePayer = payer;
             transaction.recentBlockhash = latestBlockhash.blockhash;
+            const actualBytes = transaction.serialize({
+              requireAllSignatures: false,
+              verifySignatures: false,
+            }).length;
+            if (actualBytes > transactionSizeLimit) {
+              throw new Error(`Transaction too large after packing: ${actualBytes} > ${transactionSizeLimit}`);
+            }
             const result = await provider.signAndSendTransaction(transaction);
             txHistory.unshift({
               batch: index + 1,
               signature: result.signature,
               asset: currentAssetSymbol(),
-              count: batches[index].length,
+              count: batches[index].rows.length,
             });
             renderTxHistory();
             setStatus(`Sent batch ${index + 1}: ${shortSignature(result.signature)}`, "SENT", "ok");
