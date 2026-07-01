@@ -226,6 +226,12 @@
         color: #fff;
       }
 
+      .btn.execute {
+        background: var(--ink);
+        color: #fffdf6;
+        box-shadow: 4px 4px 0 var(--amber);
+      }
+
       .btn.danger {
         background: #f7dedb;
       }
@@ -520,10 +526,11 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
 
             <div class="actions">
               <button class="btn primary" id="simulateBtn" type="button">Simulate</button>
+              <button class="btn execute" id="executeBtn" type="button" disabled>Execute batch</button>
               <button class="btn" id="sampleBtn" type="button">Load sample</button>
               <button class="btn danger" id="clearBtn" type="button">Clear</button>
             </div>
-            <p class="footnote">This page connects to Phantom for wallet detection only. It does not sign or broadcast transactions.</p>
+            <p class="footnote">This page connects to Phantom and reads balances from Solana mainnet. Execute is a guarded placeholder until transaction signing is implemented.</p>
           </div>
         </div>
 
@@ -549,6 +556,10 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
               <div class="metric">
                 <span>Est. fee</span>
                 <strong id="feeAmount">0</strong>
+              </div>
+              <div class="metric">
+                <span>Wallet balance</span>
+                <strong id="walletBalance">Connect</strong>
               </div>
             </div>
             <div class="status" id="statusBox">
@@ -593,14 +604,19 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const totalAmount = document.querySelector("#totalAmount");
       const batchCount = document.querySelector("#batchCount");
       const feeAmount = document.querySelector("#feeAmount");
+      const walletBalance = document.querySelector("#walletBalance");
       const statusBox = document.querySelector("#statusBox");
       const recipientRows = document.querySelector("#recipientRows");
       const batchList = document.querySelector("#batchList");
       const walletBtn = document.querySelector("#walletBtn");
+      const executeBtn = document.querySelector("#executeBtn");
       const networkPill = document.querySelector("#networkPill");
       const tokenAddressLabel = document.querySelector("#tokenAddressLabel");
       const tokenAddressHint = document.querySelector("#tokenAddressHint");
       let activeTab = "all";
+      let connectedPublicKey = "";
+      const rpcEndpoint = "https://api.mainnet-beta.solana.com";
+      const lamportsPerSol = 1_000_000_000;
       const tokenPresets = {
         usdc: {
           symbol: "USDC",
@@ -650,6 +666,65 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         return new Intl.NumberFormat("en-US", {
           maximumFractionDigits: 6,
         }).format(value);
+      }
+
+      function currentAssetSymbol() {
+        const selectedToken = tokenPresets[tokenPreset.value];
+        return assetType.value === "SPL" && selectedToken ? selectedToken.symbol : assetType.value;
+      }
+
+      async function rpc(method, params) {
+        const response = await fetch(rpcEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: Date.now(),
+            method,
+            params,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || payload.error) {
+          throw new Error(payload.error ? payload.error.message : "RPC request failed");
+        }
+        return payload.result;
+      }
+
+      async function refreshWalletBalance() {
+        if (!connectedPublicKey) {
+          walletBalance.textContent = "Connect";
+          return;
+        }
+
+        walletBalance.textContent = "Loading";
+        try {
+          if (assetType.value === "SOL") {
+            const balance = await rpc("getBalance", [connectedPublicKey]);
+            walletBalance.textContent = `${formatAmount(balance.value / lamportsPerSol)} SOL`;
+            return;
+          }
+
+          if (!looksLikeSolanaAddress(mintInput.value)) {
+            walletBalance.textContent = "Invalid token";
+            return;
+          }
+
+          const accounts = await rpc("getTokenAccountsByOwner", [
+            connectedPublicKey,
+            { mint: mintInput.value },
+            { encoding: "jsonParsed" },
+          ]);
+          const balance = accounts.value.reduce((sum, account) => {
+            const amount = account.account.data.parsed.info.tokenAmount.uiAmountString || "0";
+            return sum + Number(amount);
+          }, 0);
+          walletBalance.textContent = `${formatAmount(balance)} ${currentAssetSymbol()}`;
+        } catch (error) {
+          walletBalance.textContent = "Unavailable";
+        }
       }
 
       function render() {
@@ -718,6 +793,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           : tokenPreset.value === "custom"
             ? "Paste the SPL Token Mint Address for the token you want to send."
             : `${selectedToken.symbol} mint address is filled from the token preset.`;
+        executeBtn.disabled = !connectedPublicKey || !rows.length || errors.length > 0;
       }
 
       function syncTokenPreset() {
@@ -771,9 +847,12 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           walletBtn.textContent = "Connecting...";
           const response = await provider.connect();
           const publicKey = response.publicKey.toString();
+          connectedPublicKey = publicKey;
           walletBtn.textContent = shortAddress(publicKey);
           networkPill.textContent = "phantom connected";
           networkPill.className = "pill ok";
+          render();
+          refreshWalletBalance();
         } catch (error) {
           setWalletState("Connect Phantom", "bad");
           networkPill.textContent = error && error.code === 4001 ? "connection rejected" : "wallet error";
@@ -785,18 +864,28 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
       walletBtn.addEventListener("click", () => {
         connectPhantom();
       });
+      executeBtn.addEventListener("click", () => {
+        statusBox.className = "status bad";
+        statusBox.innerHTML = "<span>Transaction signing is not implemented yet</span><span>NOT SENT</span>";
+      });
       assetType.addEventListener("change", () => {
         if (assetType.value === "SPL" && !mintInput.value) {
           tokenPreset.value = "usdc";
         }
         syncTokenPreset();
         render();
+        refreshWalletBalance();
       });
       tokenPreset.addEventListener("change", () => {
         syncTokenPreset();
         render();
+        refreshWalletBalance();
       });
-      [recipientInput, mintInput, batchSize].forEach((node) => node.addEventListener("input", render));
+      mintInput.addEventListener("input", () => {
+        render();
+        refreshWalletBalance();
+      });
+      [recipientInput, batchSize].forEach((node) => node.addEventListener("input", render));
       render();
     </script>
   </body>
