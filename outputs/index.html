@@ -582,6 +582,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
 
             <div class="actions">
               <button class="btn primary" id="simulateBtn" type="button">Simulate</button>
+              <button class="btn" id="capacityBtn" type="button">Calculate max/tx</button>
               <button class="btn execute" id="executeBtn" type="button" disabled>Execute batch</button>
               <button class="btn" id="sampleBtn" type="button">Load sample</button>
               <button class="btn danger" id="clearBtn" type="button">Clear</button>
@@ -616,6 +617,10 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
               <div class="metric">
                 <span>Wallet balance</span>
                 <strong id="walletBalance">Connect</strong>
+              </div>
+              <div class="metric">
+                <span>Max / tx</span>
+                <strong id="txCapacity">-</strong>
               </div>
             </div>
             <div class="status" id="statusBox">
@@ -672,11 +677,13 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const batchCount = document.querySelector("#batchCount");
       const feeAmount = document.querySelector("#feeAmount");
       const walletBalance = document.querySelector("#walletBalance");
+      const txCapacity = document.querySelector("#txCapacity");
       const statusBox = document.querySelector("#statusBox");
       const recipientRows = document.querySelector("#recipientRows");
       const batchList = document.querySelector("#batchList");
       const txList = document.querySelector("#txList");
       const walletBtn = document.querySelector("#walletBtn");
+      const capacityBtn = document.querySelector("#capacityBtn");
       const executeBtn = document.querySelector("#executeBtn");
       const networkPill = document.querySelector("#networkPill");
       const tokenAddressLabel = document.querySelector("#tokenAddressLabel");
@@ -692,6 +699,8 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
         "https://solana-rpc.publicnode.com",
       ];
       const lamportsPerSol = 1_000_000_000;
+      const transactionSizeLimit = 1232;
+      const estimateBlockhash = "11111111111111111111111111111111";
       let connection = new solanaWeb3.Connection(rpcEndpoint, "confirmed");
       const tokenProgramId = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
       const associatedTokenProgramId = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -917,11 +926,13 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         return transaction;
       }
 
-      async function buildSplTransaction(payer, rows) {
+      async function buildSplTransaction(payer, rows, options = {}) {
         const mint = new solanaWeb3.PublicKey(mintInput.value);
         const decimals = await getMintDecimals(mint);
         const sourceAta = associatedTokenAddress(payer, mint);
-        const sourceAccount = await withRpcFallback((rpcConnection) => rpcConnection.getAccountInfo(sourceAta, "confirmed"));
+        const sourceAccount = options.skipSourceAccountCheck
+          ? true
+          : await withRpcFallback((rpcConnection) => rpcConnection.getAccountInfo(sourceAta, "confirmed"));
         if (!sourceAccount) {
           throw new Error(`No ${currentAssetSymbol()} token account found for connected wallet`);
         }
@@ -948,6 +959,86 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           );
         }
         return transaction;
+      }
+
+      function serializedTransactionSize(transaction, payer) {
+        transaction.feePayer = payer;
+        transaction.recentBlockhash = estimateBlockhash;
+        return transaction.serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        }).length;
+      }
+
+      async function estimateMaxRecipientsPerTransaction() {
+        if (!connectedPublicKey) {
+          txCapacity.textContent = "Connect";
+          setStatus("Connect Phantom before calculating transaction capacity", "BLOCKED", "bad");
+          return;
+        }
+
+        const rows = parseRecipients();
+        const valid = rows.filter((row) => row.ok);
+        const errors = rows.filter((row) => !row.ok);
+        if (!valid.length || errors.length) {
+          txCapacity.textContent = "-";
+          render();
+          return;
+        }
+
+        if (assetType.value === "SPL" && !looksLikeSolanaAddress(mintInput.value)) {
+          txCapacity.textContent = "Invalid";
+          setStatus("Enter a valid SPL token mint address", "BLOCKED", "bad");
+          return;
+        }
+
+        const payer = new solanaWeb3.PublicKey(connectedPublicKey);
+        capacityBtn.disabled = true;
+        txCapacity.textContent = "Calc";
+        try {
+          let maxRecipients = 0;
+          let maxBytes = 0;
+          let firstOverflowBytes = 0;
+
+          for (let count = 1; count <= valid.length; count += 1) {
+            const slice = valid.slice(0, count);
+            const transaction =
+              assetType.value === "SOL"
+                ? await buildSolTransaction(payer, slice)
+                : await buildSplTransaction(payer, slice, { skipSourceAccountCheck: true });
+            const bytes = serializedTransactionSize(transaction, payer);
+            if (bytes <= transactionSizeLimit) {
+              maxRecipients = count;
+              maxBytes = bytes;
+            } else {
+              firstOverflowBytes = bytes;
+              break;
+            }
+          }
+
+          if (!maxRecipients) {
+            txCapacity.textContent = `0 / ${transactionSizeLimit}`;
+            setStatus(`First recipient exceeds ${transactionSizeLimit} bytes (${firstOverflowBytes} bytes)`, "TOO LARGE", "bad");
+            return;
+          }
+
+          txCapacity.textContent = `${maxRecipients} / ${transactionSizeLimit}`;
+          if (Number(batchSize.value) > maxRecipients) {
+            batchSize.value = maxRecipients;
+          }
+          const overflowNote = firstOverflowBytes ? ` Next would be ${firstOverflowBytes} bytes.` : "";
+          render();
+          setStatus(
+            `Max ${maxRecipients} recipient${maxRecipients === 1 ? "" : "s"} per tx. Current size ${maxBytes} bytes.${overflowNote}`,
+            "SIZE",
+            "ok"
+          );
+        } catch (error) {
+          txCapacity.textContent = "Error";
+          setStatus(error.message || "Unable to calculate transaction size", "FAILED", "bad");
+        } finally {
+          capacityBtn.disabled = false;
+        }
       }
 
       async function executeBatch() {
@@ -1161,10 +1252,14 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
       walletBtn.addEventListener("click", () => {
         connectPhantom();
       });
+      capacityBtn.addEventListener("click", () => {
+        estimateMaxRecipientsPerTransaction();
+      });
       executeBtn.addEventListener("click", () => {
         executeBatch();
       });
       assetType.addEventListener("change", () => {
+        txCapacity.textContent = "-";
         if (assetType.value === "SPL" && !mintInput.value) {
           tokenPreset.value = "usdc";
         }
@@ -1173,15 +1268,21 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         refreshWalletBalance();
       });
       tokenPreset.addEventListener("change", () => {
+        txCapacity.textContent = "-";
         syncTokenPreset();
         render();
         refreshWalletBalance();
       });
       mintInput.addEventListener("input", () => {
+        txCapacity.textContent = "-";
         render();
         refreshWalletBalance();
       });
-      [recipientInput, batchSize].forEach((node) => node.addEventListener("input", render));
+      recipientInput.addEventListener("input", () => {
+        txCapacity.textContent = "-";
+        render();
+      });
+      batchSize.addEventListener("input", render);
       render();
     </script>
   </body>
