@@ -530,7 +530,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
               <button class="btn" id="sampleBtn" type="button">Load sample</button>
               <button class="btn danger" id="clearBtn" type="button">Clear</button>
             </div>
-            <p class="footnote">This page connects to Phantom and reads balances from Solana mainnet. Execute is a guarded placeholder until transaction signing is implemented.</p>
+            <p class="footnote">This page connects to Phantom, reads balances from Solana mainnet, and asks Phantom to sign each batch before sending.</p>
           </div>
         </div>
 
@@ -593,6 +593,7 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.4/lib/index.iife.min.js"></script>
     <script>
       const recipientInput = document.querySelector("#recipientInput");
       const assetType = document.querySelector("#assetType");
@@ -615,8 +616,16 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const tokenAddressHint = document.querySelector("#tokenAddressHint");
       let activeTab = "all";
       let connectedPublicKey = "";
+      let isExecuting = false;
       const rpcEndpoint = "https://api.mainnet-beta.solana.com";
+      const rpcEndpoints = [
+        rpcEndpoint,
+        "https://solana-rpc.publicnode.com",
+      ];
       const lamportsPerSol = 1_000_000_000;
+      let connection = new solanaWeb3.Connection(rpcEndpoint, "confirmed");
+      const tokenProgramId = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+      const associatedTokenProgramId = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
       const tokenPresets = {
         usdc: {
           symbol: "USDC",
@@ -673,24 +682,50 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         return assetType.value === "SPL" && selectedToken ? selectedToken.symbol : assetType.value;
       }
 
-      async function rpc(method, params) {
-        const response = await fetch(rpcEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: Date.now(),
-            method,
-            params,
-          }),
-        });
-        const payload = await response.json();
-        if (!response.ok || payload.error) {
-          throw new Error(payload.error ? payload.error.message : "RPC request failed");
+      function parseDecimalToUnits(value, decimals) {
+        const normalized = String(value).trim();
+        if (!/^\d+(\.\d+)?$/.test(normalized)) {
+          throw new Error("Invalid amount");
         }
-        return payload.result;
+
+        const [whole, fraction = ""] = normalized.split(".");
+        if (fraction.length > decimals) {
+          throw new Error(`Too many decimal places for ${currentAssetSymbol()}`);
+        }
+
+        const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
+        return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(paddedFraction || "0");
+      }
+
+      function u64Le(value) {
+        const data = new Uint8Array(8);
+        new DataView(data.buffer).setBigUint64(0, value, true);
+        return data;
+      }
+
+      function associatedTokenAddress(owner, mint) {
+        return solanaWeb3.PublicKey.findProgramAddressSync(
+          [owner.toBuffer(), tokenProgramId.toBuffer(), mint.toBuffer()],
+          associatedTokenProgramId
+        )[0];
+      }
+
+      function setStatus(message, code, state = "neutral") {
+        statusBox.className = `status${state === "ok" ? " ok" : state === "bad" ? " bad" : ""}`;
+        statusBox.innerHTML = `<span>${message}</span><span>${code}</span>`;
+      }
+
+      async function withRpcFallback(task) {
+        let lastError;
+        for (const endpoint of rpcEndpoints) {
+          try {
+            connection = new solanaWeb3.Connection(endpoint, "confirmed");
+            return await task(connection);
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError || new Error("RPC unavailable");
       }
 
       async function refreshWalletBalance() {
@@ -701,9 +736,10 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
 
         walletBalance.textContent = "Loading";
         try {
+          const owner = new solanaWeb3.PublicKey(connectedPublicKey);
           if (assetType.value === "SOL") {
-            const balance = await rpc("getBalance", [connectedPublicKey]);
-            walletBalance.textContent = `${formatAmount(balance.value / lamportsPerSol)} SOL`;
+            const balance = await withRpcFallback((rpcConnection) => rpcConnection.getBalance(owner, "confirmed"));
+            walletBalance.textContent = `${formatAmount(balance / lamportsPerSol)} SOL`;
             return;
           }
 
@@ -712,18 +748,170 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
             return;
           }
 
-          const accounts = await rpc("getTokenAccountsByOwner", [
-            connectedPublicKey,
-            { mint: mintInput.value },
-            { encoding: "jsonParsed" },
-          ]);
+          const mint = new solanaWeb3.PublicKey(mintInput.value);
+          const accounts = await withRpcFallback((rpcConnection) =>
+            rpcConnection.getParsedTokenAccountsByOwner(owner, { mint })
+          );
           const balance = accounts.value.reduce((sum, account) => {
-            const amount = account.account.data.parsed.info.tokenAmount.uiAmountString || "0";
-            return sum + Number(amount);
+            const amount = account.account.data.parsed.info.tokenAmount.uiAmount || 0;
+            return sum + amount;
           }, 0);
           walletBalance.textContent = `${formatAmount(balance)} ${currentAssetSymbol()}`;
         } catch (error) {
           walletBalance.textContent = "Unavailable";
+          tokenAddressHint.textContent = `Balance read failed: ${error.message}`;
+        }
+      }
+
+      function createAssociatedTokenAccountInstruction(payer, ata, owner, mint) {
+        return new solanaWeb3.TransactionInstruction({
+          programId: associatedTokenProgramId,
+          keys: [
+            { pubkey: payer, isSigner: true, isWritable: true },
+            { pubkey: ata, isSigner: false, isWritable: true },
+            { pubkey: owner, isSigner: false, isWritable: false },
+            { pubkey: mint, isSigner: false, isWritable: false },
+            { pubkey: solanaWeb3.SystemProgram.programId, isSigner: false, isWritable: false },
+            { pubkey: tokenProgramId, isSigner: false, isWritable: false },
+            { pubkey: solanaWeb3.SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+          ],
+          data: new Uint8Array(),
+        });
+      }
+
+      function createTransferCheckedInstruction(source, mint, destination, owner, amount, decimals) {
+        const data = new Uint8Array(10);
+        data[0] = 12;
+        data.set(u64Le(amount), 1);
+        data[9] = decimals;
+        return new solanaWeb3.TransactionInstruction({
+          programId: tokenProgramId,
+          keys: [
+            { pubkey: source, isSigner: false, isWritable: true },
+            { pubkey: mint, isSigner: false, isWritable: false },
+            { pubkey: destination, isSigner: false, isWritable: true },
+            { pubkey: owner, isSigner: true, isWritable: false },
+          ],
+          data,
+        });
+      }
+
+      async function getMintDecimals(mint) {
+        const account = await withRpcFallback((rpcConnection) => rpcConnection.getParsedAccountInfo(mint, "confirmed"));
+        const decimals = account.value?.data?.parsed?.info?.decimals;
+        if (typeof decimals !== "number") {
+          throw new Error("Unable to read token decimals");
+        }
+        return decimals;
+      }
+
+      async function buildSolTransaction(payer, rows) {
+        const transaction = new solanaWeb3.Transaction();
+        rows.forEach((row) => {
+          transaction.add(
+            solanaWeb3.SystemProgram.transfer({
+              fromPubkey: payer,
+              toPubkey: new solanaWeb3.PublicKey(row.address),
+              lamports: Number(parseDecimalToUnits(row.amountRaw, 9)),
+            })
+          );
+        });
+        return transaction;
+      }
+
+      async function buildSplTransaction(payer, rows) {
+        const mint = new solanaWeb3.PublicKey(mintInput.value);
+        const decimals = await getMintDecimals(mint);
+        const sourceAta = associatedTokenAddress(payer, mint);
+        const sourceAccount = await withRpcFallback((rpcConnection) => rpcConnection.getAccountInfo(sourceAta, "confirmed"));
+        if (!sourceAccount) {
+          throw new Error(`No ${currentAssetSymbol()} token account found for connected wallet`);
+        }
+
+        const transaction = new solanaWeb3.Transaction();
+        for (const row of rows) {
+          const owner = new solanaWeb3.PublicKey(row.address);
+          const destinationAta = associatedTokenAddress(owner, mint);
+          const destinationAccount = await withRpcFallback((rpcConnection) =>
+            rpcConnection.getAccountInfo(destinationAta, "confirmed")
+          );
+          if (!destinationAccount) {
+            transaction.add(createAssociatedTokenAccountInstruction(payer, destinationAta, owner, mint));
+          }
+          transaction.add(
+            createTransferCheckedInstruction(
+              sourceAta,
+              mint,
+              destinationAta,
+              payer,
+              parseDecimalToUnits(row.amountRaw, decimals),
+              decimals
+            )
+          );
+        }
+        return transaction;
+      }
+
+      async function executeBatch() {
+        const provider = window.solana;
+        if (!provider || !provider.isPhantom || !connectedPublicKey) {
+          setStatus("Connect Phantom before executing", "BLOCKED", "bad");
+          return;
+        }
+
+        const rows = parseRecipients();
+        const valid = rows.filter((row) => row.ok);
+        const errors = rows.filter((row) => !row.ok);
+        if (!valid.length || errors.length) {
+          render();
+          return;
+        }
+
+        if (assetType.value === "SPL" && !looksLikeSolanaAddress(mintInput.value)) {
+          setStatus("Enter a valid SPL token mint address", "BLOCKED", "bad");
+          return;
+        }
+
+        const payer = new solanaWeb3.PublicKey(connectedPublicKey);
+        const size = Math.max(1, Math.min(12, Number(batchSize.value) || 1));
+        const batches = Array.from({ length: Math.ceil(valid.length / size) }, (_, index) =>
+          valid.slice(index * size, index * size + size)
+        );
+
+        isExecuting = true;
+        executeBtn.disabled = true;
+        try {
+          for (let index = 0; index < batches.length; index += 1) {
+            setStatus(`Requesting Phantom signature for batch ${index + 1} of ${batches.length}`, "SIGN", "neutral");
+            const transaction =
+              assetType.value === "SOL"
+                ? await buildSolTransaction(payer, batches[index])
+                : await buildSplTransaction(payer, batches[index]);
+            const latestBlockhash = await withRpcFallback((rpcConnection) =>
+              rpcConnection.getLatestBlockhash("confirmed")
+            );
+            transaction.feePayer = payer;
+            transaction.recentBlockhash = latestBlockhash.blockhash;
+            const result = await provider.signAndSendTransaction(transaction);
+            setStatus(`Sent batch ${index + 1}: ${result.signature.slice(0, 10)}...`, "SENT", "ok");
+            await withRpcFallback((rpcConnection) =>
+              rpcConnection.confirmTransaction(
+                {
+                  signature: result.signature,
+                  blockhash: latestBlockhash.blockhash,
+                  lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+                },
+                "confirmed"
+              )
+            );
+          }
+          setStatus(`Completed ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "DONE", "ok");
+          refreshWalletBalance();
+        } catch (error) {
+          setStatus(error.message || "Transaction failed", "FAILED", "bad");
+        } finally {
+          isExecuting = false;
+          render();
         }
       }
 
@@ -793,7 +981,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           : tokenPreset.value === "custom"
             ? "Paste the SPL Token Mint Address for the token you want to send."
             : `${selectedToken.symbol} mint address is filled from the token preset.`;
-        executeBtn.disabled = !connectedPublicKey || !rows.length || errors.length > 0;
+        executeBtn.disabled = isExecuting || !connectedPublicKey || !rows.length || errors.length > 0;
       }
 
       function syncTokenPreset() {
@@ -865,8 +1053,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         connectPhantom();
       });
       executeBtn.addEventListener("click", () => {
-        statusBox.className = "status bad";
-        statusBox.innerHTML = "<span>Transaction signing is not implemented yet</span><span>NOT SENT</span>";
+        executeBatch();
       });
       assetType.addEventListener("change", () => {
         if (assetType.value === "SPL" && !mintInput.value) {
