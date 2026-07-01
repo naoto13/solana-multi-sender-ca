@@ -17,6 +17,7 @@ Static frontend prototype for a Solana multi sender flow.
 - Automatic execution-time repacking under the 1232-byte Solana transaction limit
 - Phantom signing and transaction broadcast
 - Solscan transaction links after each sent batch
+- Background confirmation after each submitted batch
 - SOL transfer batching
 - SPL token transfer batching with associated token account creation for recipients
 

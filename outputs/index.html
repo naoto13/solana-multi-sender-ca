@@ -814,12 +814,38 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         txList.innerHTML = txHistory
           .map(
             (tx) => `<div class="tx-item">
-              <span class="pill ok">batch ${tx.batch}</span>
+              <span class="pill ${tx.status === "confirmed" ? "ok" : ""}">batch ${tx.batch}</span>
               <span class="tx-sig" title="${tx.signature}">${shortSignature(tx.signature)}</span>
-              <a class="tx-link" href="${solscanUrl(tx.signature)}" target="_blank" rel="noopener noreferrer">Solscan</a>
+              <a class="tx-link" href="${solscanUrl(tx.signature)}" target="_blank" rel="noopener noreferrer">${tx.status === "confirmed" ? "Confirmed" : "Solscan"}</a>
             </div>`
           )
           .join("");
+      }
+
+      async function confirmSignatureInBackground(signature, latestBlockhash) {
+        try {
+          await withRpcFallback((rpcConnection) =>
+            rpcConnection.confirmTransaction(
+              {
+                signature,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+              },
+              "confirmed"
+            )
+          );
+          const tx = txHistory.find((item) => item.signature === signature);
+          if (tx) {
+            tx.status = "confirmed";
+            renderTxHistory();
+          }
+        } catch (error) {
+          const tx = txHistory.find((item) => item.signature === signature);
+          if (tx) {
+            tx.status = "submitted";
+            renderTxHistory();
+          }
+        }
       }
 
       async function withRpcFallback(task) {
@@ -1153,21 +1179,16 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
               signature: result.signature,
               asset: currentAssetSymbol(),
               count: batches[index].rows.length,
+              status: "submitted",
             });
             renderTxHistory();
             setStatus(`Sent batch ${index + 1}: ${shortSignature(result.signature)}`, "SENT", "ok");
-            await withRpcFallback((rpcConnection) =>
-              rpcConnection.confirmTransaction(
-                {
-                  signature: result.signature,
-                  blockhash: latestBlockhash.blockhash,
-                  lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-                },
-                "confirmed"
-              )
-            );
+            confirmSignatureInBackground(result.signature, latestBlockhash);
+            if (index + 1 < batches.length) {
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            }
           }
-          setStatus(`Completed ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "DONE", "ok");
+          setStatus(`Submitted ${batches.length} batch${batches.length === 1 ? "" : "es"}`, "SUBMITTED", "ok");
           refreshWalletBalance();
         } catch (error) {
           setStatus(error.message || "Transaction failed", "FAILED", "bad");
