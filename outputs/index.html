@@ -157,6 +157,14 @@
         text-transform: uppercase;
       }
 
+      label small {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.35;
+        text-transform: none;
+      }
+
       input,
       textarea,
       select {
@@ -475,8 +483,14 @@
                 </select>
               </label>
               <label>
-                Token mint
-                <input id="mintInput" value="So11111111111111111111111111111111111111112" />
+                <span id="tokenAddressLabel">Token address</span>
+                <input
+                  id="mintInput"
+                  placeholder="SPL token mint address"
+                  value=""
+                  aria-describedby="tokenAddressHint"
+                />
+                <small id="tokenAddressHint">SOL transfers do not need a token address.</small>
               </label>
               <label>
                 Batch size
@@ -572,6 +586,8 @@ A6qTqQ5Zk13kifTDKAzA7M9Z7JAFmVQZQ9MMfR3bX8np,0.75</textarea>
       const batchList = document.querySelector("#batchList");
       const walletBtn = document.querySelector("#walletBtn");
       const networkPill = document.querySelector("#networkPill");
+      const tokenAddressLabel = document.querySelector("#tokenAddressLabel");
+      const tokenAddressHint = document.querySelector("#tokenAddressHint");
       let activeTab = "all";
 
       const sample = `4k3Dyjzvzp8e8fprBvH6b9W2n3t9WgGz7VqN1wKbXH2m,12.5
@@ -670,7 +686,13 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           </div>`;
         }).join("");
 
-        mintInput.disabled = assetType.value === "SOL";
+        const isSolTransfer = assetType.value === "SOL";
+        mintInput.disabled = isSolTransfer;
+        mintInput.placeholder = isSolTransfer ? "Not required for SOL" : "SPL token mint address";
+        tokenAddressLabel.textContent = isSolTransfer ? "Token address" : "Token address / mint address";
+        tokenAddressHint.textContent = isSolTransfer
+          ? "SOL transfers do not need a token address."
+          : "Paste the SPL Token Mint Address for the token you want to send.";
       }
 
       document.querySelector("#simulateBtn").addEventListener("click", render);

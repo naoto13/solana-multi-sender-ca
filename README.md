@@ -6,6 +6,7 @@ Static frontend prototype for a Solana multi sender flow.
 
 - Phantom wallet connection detection
 - SOL / SPL token mode selector
+- SPL token address input, shown as the token mint address used on Solana
 - `address,amount` recipient input
 - Local validation for invalid addresses, invalid amounts, and duplicates
 - Batch count and estimated fee preview
