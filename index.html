@@ -980,6 +980,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         const batches = [];
         let current = [];
         let currentBytes = 0;
+        let wasAutoSplit = false;
 
         for (const row of rows) {
           if (current.length >= requestedMax) {
@@ -1001,6 +1002,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           }
 
           if (current.length) {
+            wasAutoSplit = true;
             batches.push({ rows: current, bytes: currentBytes });
             const singleTransaction = await buildTransferTransaction(payer, [row], {
               skipSourceAccountCheck: true,
@@ -1021,7 +1023,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           batches.push({ rows: current, bytes: currentBytes });
         }
 
-        return batches;
+        return { batches, wasAutoSplit };
       }
 
       async function estimateMaxRecipientsPerTransaction() {
@@ -1121,9 +1123,11 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         isExecuting = true;
         executeBtn.disabled = true;
         try {
-          setStatus("Packing rows into transactions under 1232 bytes", "PACK", "neutral");
-          const batches = await packRowsBySerializedSize(payer, valid, requestedSize);
+          const { batches, wasAutoSplit } = await packRowsBySerializedSize(payer, valid, requestedSize);
           batchCount.textContent = batches.length;
+          if (wasAutoSplit) {
+            setStatus(`Auto-split into ${batches.length} transactions under 1232 bytes`, "AUTO SPLIT", "ok");
+          }
           for (let index = 0; index < batches.length; index += 1) {
             setStatus(
               `Requesting Phantom signature for batch ${index + 1} of ${batches.length} (${batches[index].rows.length} recipients, ${batches[index].bytes} bytes)`,
@@ -1169,7 +1173,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           setStatus(error.message || "Transaction failed", "FAILED", "bad");
         } finally {
           isExecuting = false;
-          render();
+          executeBtn.disabled = !connectedPublicKey || !valid.length || errors.length > 0;
         }
       }
 
