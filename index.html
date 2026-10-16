@@ -727,11 +727,15 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           .split(/\n+/)
           .map((raw, index) => {
             const line = raw.trim();
-            const [address = "", amountRaw = ""] = line.split(/[,\s]+/);
+            const fields = line.includes(",")
+              ? line.split(",").map((field) => field.trim())
+              : line.split(/\s+/);
+            const [address = "", amountRaw = ""] = fields;
             const amount = Number(amountRaw);
             const issues = [];
 
             if (!line) issues.push("empty");
+            if (line && (fields.length !== 2 || /\s/.test(amountRaw))) issues.push("expected address and amount only");
             if (line && !looksLikeSolanaAddress(address)) issues.push("invalid address");
             if (line && (!Number.isFinite(amount) || amount <= 0)) issues.push("invalid amount");
             if (line && seen.has(address)) issues.push("duplicate");

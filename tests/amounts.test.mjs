@@ -125,6 +125,29 @@ for (const path of ["index.html", "outputs/index.html"]) {
   });
 
   for (const asset of ["SOL", "SPL"]) {
+    for (const suffix of [",1,000", ",1 trailing", ",1 000", ",1,", ",,1", " 1 trailing", ",1e3", ",0x10"]) {
+      test(`${path}: ${asset} complete input ${JSON.stringify(suffix)} is rejected before signing`, async () => {
+        const { app, element, signingRequests } = loadPage(path, asset);
+        // A valid first row must not be sent if a later row has an extra field
+        // or unsupported amount syntax. Use separate batches to cover preflight.
+        element("#recipientInput").value = `${address},1\n${secondAddress}${suffix}`;
+        await app.executeBatch();
+        assert.equal(signingRequests.length, 0);
+      });
+    }
+
+    for (const separator of [",", ", ", " , ", " ", "\t"]) {
+      test(`${path}: ${asset} supported separator ${JSON.stringify(separator)} preserves the amount`, async () => {
+        const { app, element, signingRequests } = loadPage(path, asset);
+        element("#recipientInput").value = `  ${address}${separator}1.25  \r\n\n`;
+        await app.executeBatch();
+        assert.equal(signingRequests.length, 1);
+        const instruction = signingRequests[0].instructions.at(-1);
+        const units = asset === "SOL" ? instruction.lamports : new DataView(instruction.data.buffer).getBigUint64(1, true);
+        assert.equal(units, asset === "SOL" ? 1250000000n : 1250000n);
+      });
+    }
+
     test(`${path}: ${asset} invalid later batch stops before the first signing request`, async () => {
       const { app, element, signingRequests } = loadPage(path, asset);
       const decimals = asset === "SOL" ? 9 : 6;
