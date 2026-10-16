@@ -727,11 +727,15 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
           .split(/\n+/)
           .map((raw, index) => {
             const line = raw.trim();
-            const [address = "", amountRaw = ""] = line.split(/[,\s]+/);
+            const fields = line.includes(",")
+              ? line.split(",").map((field) => field.trim())
+              : line.split(/\s+/);
+            const [address = "", amountRaw = ""] = fields;
             const amount = Number(amountRaw);
             const issues = [];
 
             if (!line) issues.push("empty");
+            if (line && (fields.length !== 2 || /\s/.test(amountRaw))) issues.push("expected address and amount only");
             if (line && !looksLikeSolanaAddress(address)) issues.push("invalid address");
             if (line && (!Number.isFinite(amount) || amount <= 0)) issues.push("invalid amount");
             if (line && seen.has(address)) issues.push("duplicate");
@@ -772,10 +776,17 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
         }
 
         const paddedFraction = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
-        return BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(paddedFraction || "0");
+        const units = BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(paddedFraction || "0");
+        if (units <= 0n || units > (1n << 64n) - 1n) {
+          throw new Error("Amount must be positive and fit in an unsigned 64-bit integer");
+        }
+        return units;
       }
 
       function u64Le(value) {
+        if (value < 0n || value > (1n << 64n) - 1n) {
+          throw new Error("Amount is outside the unsigned 64-bit range");
+        }
         const data = new Uint8Array(8);
         new DataView(data.buffer).setBigUint64(0, value, true);
         return data;
@@ -945,7 +956,7 @@ Gk9sT2mV6wP1aD9cE2gH7iK4mNpFZthQ5Z7Jk3b,1`;
             solanaWeb3.SystemProgram.transfer({
               fromPubkey: payer,
               toPubkey: new solanaWeb3.PublicKey(row.address),
-              lamports: Number(parseDecimalToUnits(row.amountRaw, 9)),
+              lamports: parseDecimalToUnits(row.amountRaw, 9),
             })
           );
         });
